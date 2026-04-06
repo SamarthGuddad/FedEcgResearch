@@ -41,7 +41,7 @@ class LocalTrainer:
             num_epochs: Number of local training epochs.
 
         Returns:
-            Tuple of (average_loss, accuracy) from the final epoch.
+            Tuple of (average_loss, accuracy, total_samples_trained) from the final epoch.
         """
         self.model.train()
         optimizer = optim.Adam(self.model.parameters(), lr=self.learning_rate)
@@ -54,7 +54,11 @@ class LocalTrainer:
             correct = 0
             total = 0
 
-            for batch_X, batch_y in train_loader:
+            for i, (batch_X, batch_y) in enumerate(train_loader):
+                # Speed-up hack: Limit batches to reduce CPU training time to ~1 minute
+                if i >= 30:
+                    break
+
                 batch_X = batch_X.to(DEVICE)
                 batch_y = batch_y.to(DEVICE)
 
@@ -74,7 +78,7 @@ class LocalTrainer:
             final_loss = epoch_loss
             final_acc = epoch_acc
 
-        return final_loss, final_acc
+        return final_loss, final_acc, total
 
     def evaluate(self, test_loader) -> Tuple[float, float]:
         """

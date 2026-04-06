@@ -115,7 +115,7 @@ def run_simulation():
     from client.client import FederatedClient
 
     SERVER_URL = "http://127.0.0.1:5000"
-    NUM_ROUNDS = 10
+    NUM_ROUNDS = 10000  # Set to a very high number for continuous simulation
     NUM_CLIENTS = 3
 
     # Define hospital-client mapping
@@ -138,12 +138,12 @@ def run_simulation():
         )
         clients.append(client)
 
-    print(f"\n[SIM] Starting {NUM_ROUNDS} federation rounds with {NUM_CLIENTS} clients...")
+    print(f"\n[SIM] Starting continuous federation rounds with {NUM_CLIENTS} clients...")
     print("-" * 70)
 
     for round_num in range(1, NUM_ROUNDS + 1):
         print(f"\n{'='*70}")
-        print(f"  FEDERATION ROUND {round_num}/{NUM_ROUNDS}")
+        print(f"  FEDERATION ROUND {round_num} (Continuous)")
         print(f"{'='*70}")
 
         # Run all clients in parallel threads
@@ -191,6 +191,12 @@ def run_simulation():
 
         except Exception as e:
             print(f"[SIM] Aggregation failed: {e}")
+
+        # Add a delay between rounds as requested to allow for visualization
+        # and staggering of data transmission simulation
+        ROUND_DELAY = 10 
+        print(f"\n[SIM] Round {round_num} complete. Waiting {ROUND_DELAY}s before starting next round...")
+        time.sleep(ROUND_DELAY)
 
     # ── Step 6: Final Evaluation ───────────────────────────────────────────
     print(f"\n{'='*70}")

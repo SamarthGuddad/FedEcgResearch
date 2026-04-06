@@ -94,12 +94,12 @@ class FederatedClient:
         trainer = LocalTrainer(self.model, learning_rate=self.learning_rate)
         train_loader = self.data_loader.get_train_loader()
 
-        loss, accuracy = trainer.train(train_loader, num_epochs=self.local_epochs)
+        loss, accuracy, actual_samples = trainer.train(train_loader, num_epochs=self.local_epochs)
         self.model = trainer.model  # Update local model with trained weights
 
-        return loss, accuracy
+        return loss, accuracy, actual_samples
 
-    def push_weights(self, local_loss: float, local_accuracy: float) -> bool:
+    def push_weights(self, local_loss: float, local_accuracy: float, actual_samples: int) -> bool:
         """
         Push local model weights to the server.
         Only weights are transmitted — never raw ECG data.
@@ -107,6 +107,7 @@ class FederatedClient:
         Args:
             local_loss: Training loss from this round.
             local_accuracy: Training accuracy from this round.
+            actual_samples: Number of samples actually trained on.
 
         Returns:
             True if successful, False otherwise.
@@ -118,7 +119,7 @@ class FederatedClient:
             payload = {
                 "client_id": self.client_id,
                 "weights": serialized,
-                "num_samples": self.num_samples,
+                "num_samples": actual_samples,
                 "local_loss": local_loss,
                 "local_accuracy": local_accuracy,
             }
@@ -157,12 +158,12 @@ class FederatedClient:
         print(f"[{self.client_id}] Global model pulled successfully.")
 
         # Step 2: Train locally
-        loss, accuracy = self.train_locally()
+        loss, accuracy, actual_samples = self.train_locally()
         print(f"[{self.client_id}] Local training complete | "
               f"Loss: {loss:.4f} | Acc: {accuracy:.1f}%")
 
         # Step 3: Push updated weights
-        if not self.push_weights(loss, accuracy):
+        if not self.push_weights(loss, accuracy, actual_samples):
             return {"status": "error", "message": "Failed to push weights"}
         print(f"[{self.client_id}] Weights pushed to server.")
 
@@ -171,7 +172,7 @@ class FederatedClient:
             "client_id": self.client_id,
             "loss": loss,
             "accuracy": accuracy,
-            "num_samples": self.num_samples,
+            "num_samples": actual_samples,
         }
 
     def evaluate_local(self) -> dict:
