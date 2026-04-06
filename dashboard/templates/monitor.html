@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FedECG — Hospital ECG Monitor</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+        :root{--bg:#050508;--card:#0a0f14;--border:#141c24;--text:#e0e8f0;--muted:#6b7b8d;--green:#00ff41;--red:#ff3355;--orange:#ffaa00}
+        body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;min-height:100vh}
+
+        .header{text-align:center;padding:18px 24px 14px;background:linear-gradient(180deg,#0d1117,transparent);border-bottom:1px solid #141c2466}
+        .header h1{font-size:1.5rem;font-weight:800;background:linear-gradient(90deg,var(--green),#00d4ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+        .header p{color:var(--muted);font-size:.78rem;margin-top:4px}
+
+        .loading{text-align:center;padding:80px 20px;color:var(--muted);font-size:1.1rem}
+        .loading .spinner{width:40px;height:40px;border:3px solid var(--border);border-top-color:var(--green);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 16px}
+        @keyframes spin{to{transform:rotate(360deg)}}
+
+        .monitor-grid{display:grid;gap:16px;padding:16px 20px;max-width:1600px;margin:0 auto}
+
+        .hospital-card{background:var(--card);border:1px solid var(--border);border-radius:14px;overflow:hidden;transition:border-color .3s,box-shadow .3s}
+        .hospital-card.alert-flash{border-color:var(--red)!important;box-shadow:0 0 25px rgba(255,51,85,.3)!important}
+
+        .card-header{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border)}
+        .hospital-name{font-weight:700;font-size:.88rem}
+        .hospital-loc{font-size:.7rem;color:var(--muted);margin-top:2px}
+        .live-badge{display:flex;align-items:center;gap:6px;font-size:.68rem;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:1.5px}
+        .live-dot{width:8px;height:8px;border-radius:50%;animation:blink 1.4s infinite}
+        @keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
+
+        .ecg-container{position:relative;background:#000a00;height:190px;border-bottom:1px solid var(--border)}
+        .ecg-canvas{width:100%;height:100%;display:block}
+        .ecg-label{position:absolute;top:8px;left:10px;font-family:'JetBrains Mono',monospace;font-size:.6rem;color:rgba(255,255,255,.2);letter-spacing:1px}
+        .ecg-source{position:absolute;top:8px;right:10px;font-family:'JetBrains Mono',monospace;font-size:.55rem;color:rgba(255,255,255,.15);letter-spacing:.5px}
+
+        .vitals-row{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-bottom:1px solid var(--border);min-height:56px;flex-wrap:wrap;gap:8px}
+        .heart-section{display:flex;align-items:center;gap:8px}
+        .heart-icon{font-size:1.3rem;transition:transform .15s}
+        .heart-icon.beat{animation:pulse .4s ease}
+        @keyframes pulse{0%{transform:scale(1)}30%{transform:scale(1.35)}60%{transform:scale(.95)}100%{transform:scale(1)}}
+        .bpm-value{font-family:'JetBrains Mono',monospace;font-size:1.7rem;font-weight:700;line-height:1}
+        .bpm-label{font-size:.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:1px}
+
+        .prediction-badge{display:flex;align-items:center;gap:6px;padding:5px 12px;border-radius:18px;font-weight:700;font-size:.75rem;transition:all .3s}
+        .prediction-badge.normal{background:rgba(0,255,65,.08);border:1px solid rgba(0,255,65,.25);color:var(--green)}
+        .prediction-badge.abnormal{background:rgba(255,51,85,.1);border:1px solid rgba(255,51,85,.35);color:var(--red);animation:pulseRed 1.5s infinite}
+        @keyframes pulseRed{0%,100%{box-shadow:0 0 0 0 rgba(255,51,85,0)}50%{box-shadow:0 0 10px 2px rgba(255,51,85,.2)}}
+
+        .truth-badge{font-family:'JetBrains Mono',monospace;font-size:.68rem;padding:3px 10px;border-radius:10px;border:1px solid #ffffff15;background:#ffffff08;color:var(--muted)}
+        .truth-badge.correct{border-color:rgba(0,255,65,.2);color:var(--green)}
+        .truth-badge.wrong{border-color:rgba(255,51,85,.2);color:var(--red)}
+
+        .prob-section{padding:8px 16px;border-bottom:1px solid var(--border)}
+        .prob-bar-row{display:flex;align-items:center;gap:6px;margin-bottom:3px;font-size:.65rem}
+        .prob-label{width:34px;color:var(--muted);font-family:'JetBrains Mono',monospace;text-align:right;flex-shrink:0}
+        .prob-track{flex:1;height:5px;background:#141c24;border-radius:3px;overflow:hidden}
+        .prob-fill{height:100%;border-radius:3px;transition:width .5s ease}
+        .prob-val{width:40px;text-align:right;font-family:'JetBrains Mono',monospace;color:var(--muted);flex-shrink:0}
+
+        .stats-row{display:flex;justify-content:space-around;padding:8px 16px;gap:4px;border-bottom:1px solid var(--border)}
+        .stat-item{text-align:center}
+        .stat-value{font-family:'JetBrains Mono',monospace;font-size:.95rem;font-weight:700}
+        .stat-label{font-size:.55rem;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-top:1px}
+
+        .alert-log{padding:6px 16px 10px;max-height:90px;overflow-y:auto}
+        .alert-log-title{font-size:.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:4px}
+        .alert-entry{display:flex;justify-content:space-between;align-items:center;font-size:.65rem;padding:3px 0;font-family:'JetBrains Mono',monospace;border-bottom:1px solid #141c2444}
+        .alert-entry:last-child{border-bottom:none}
+        .alert-pred{color:var(--red)}
+        .alert-truth{color:var(--muted);font-size:.6rem}
+        .alert-conf{color:var(--orange)}
+        .alert-time{color:#2a3a4a;font-size:.58rem}
+        .no-alerts{font-size:.65rem;color:#1e2a36;font-style:italic}
+
+        .footer{display:flex;justify-content:center;flex-wrap:wrap;gap:24px;padding:12px 24px;border-top:1px solid var(--border);background:#0a0f14;font-size:.7rem;color:var(--muted)}
+        .footer span{display:flex;align-items:center;gap:5px}
+        .footer .dot{width:6px;height:6px;border-radius:50%}
+
+        ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:#1e2a36;border-radius:2px}
+        @media(max-width:1100px){.monitor-grid{grid-template-columns:1fr!important;max-width:600px}}
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h1>🫀 FedECG — Hospital ECG Monitor</h1>
+    <p>Real-time arrhythmia detection · Model predictions verified against MIT-BIH ground truth labels</p>
+</div>
+
+<div id="monitorGrid" class="monitor-grid">
+    <div class="loading"><div class="spinner"></div>Detecting hospitals...</div>
+</div>
+
+<div class="footer">
+    <span><span class="dot" style="background:var(--green)"></span> Model: Federated 1D CNN</span>
+    <span><span class="dot" style="background:#00d4ff"></span> Source: MIT-BIH (PhysioNet)</span>
+    <span>Window: 5s (1800 samples)</span>
+    <span>Predictions are REAL model inference — not simulated</span>
+</div>
+
+<script>
+const CLASS_SHORT = ['N','A','V','BBB','P'];
+const PROB_COLORS = ['#00ff41','#ffaa00','#ff3355','#7c3aed','#00d4ff'];
+const FETCH_MS = 200;
+const PREDICT_EVERY = 1800;
+const SAMPLES_PER_PX = 3;
+
+let monitors = {};
+let hospitalState = {};
+
+// ── DYNAMIC INITIALIZATION ────────────────────────────────────────────────────
+// Fetch hospitals from API — nothing is hardcoded
+async function init() {
+    let data;
+    try {
+        const resp = await fetch('/api/hospitals');
+        data = await resp.json();
+    } catch(e) {
+        document.getElementById('monitorGrid').innerHTML =
+            '<div class="loading">Cannot connect to server. Is hospital_monitor.py running?</div>';
+        return;
+    }
+
+    const ids = Object.keys(data);
+    if (ids.length === 0) {
+        document.getElementById('monitorGrid').innerHTML =
+            '<div class="loading">No hospitals detected. Run data/download_data.py first.</div>';
+        return;
+    }
+
+    const grid = document.getElementById('monitorGrid');
+    grid.style.gridTemplateColumns = `repeat(${Math.min(ids.length, 3)}, 1fr)`;
+    grid.innerHTML = '';
+
+    ids.forEach(hid => {
+        const h = data[hid];
+        grid.insertAdjacentHTML('beforeend', buildCard(hid, h));
+        monitors[hid] = new ECGMonitor(`canvas-${hid}`, h.color);
+        hospitalState[hid] = { samplesSincePred: 0, fetching: false };
+        setInterval(() => fetchECG(hid), FETCH_MS);
+    });
+
+    requestAnimationFrame(animate);
+}
+
+function buildCard(hid, h) {
+    return `
+    <div class="hospital-card" id="card-${hid}" style="border-color:${h.color}22;box-shadow:0 0 20px ${h.color}08">
+        <div class="card-header">
+            <div>
+                <div class="hospital-name" style="color:${h.color}">🏥 ${h.name}</div>
+                <div class="hospital-loc">${h.location} · ${h.test_windows} test windows</div>
+            </div>
+            <div class="live-badge"><span class="live-dot" style="background:${h.color}"></span>LIVE</div>
+        </div>
+        <div class="ecg-container">
+            <canvas class="ecg-canvas" id="canvas-${hid}"></canvas>
+            <div class="ecg-label">ECG LEAD II · 360 Hz</div>
+            <div class="ecg-source">Source: MIT-BIH · Window #<span id="widx-${hid}">0</span></div>
+        </div>
+        <div class="vitals-row">
+            <div class="heart-section">
+                <span class="heart-icon" id="heart-${hid}">❤️</span>
+                <div>
+                    <div class="bpm-value" id="bpm-${hid}" style="color:${h.color}">--</div>
+                    <div class="bpm-label">BPM</div>
+                </div>
+            </div>
+            <div id="badge-${hid}" class="prediction-badge normal">
+                <span id="bicon-${hid}">✅</span>
+                <span id="btxt-${hid}">Waiting...</span>
+            </div>
+            <div>
+                <div class="truth-badge" id="truth-${hid}" title="Ground truth label from MIT-BIH annotations">
+                    GT: --
+                </div>
+            </div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:.8rem;color:var(--muted)" id="conf-${hid}">---%</div>
+        </div>
+        <div class="prob-section" id="probs-${hid}">
+            ${CLASS_SHORT.map((c,i) => `
+            <div class="prob-bar-row">
+                <span class="prob-label">${c}</span>
+                <div class="prob-track"><div class="prob-fill" id="pf-${hid}-${i}" style="width:0%;background:${PROB_COLORS[i]}"></div></div>
+                <span class="prob-val" id="pv-${hid}-${i}">0%</span>
+            </div>`).join('')}
+        </div>
+        <div class="stats-row">
+            <div class="stat-item"><div class="stat-value" id="st-total-${hid}" style="color:${h.color}">0</div><div class="stat-label">Beats</div></div>
+            <div class="stat-item"><div class="stat-value" style="color:var(--green)" id="st-normal-${hid}">0</div><div class="stat-label">Normal</div></div>
+            <div class="stat-item"><div class="stat-value" style="color:var(--red)" id="st-abn-${hid}">0</div><div class="stat-label">Abnormal</div></div>
+            <div class="stat-item"><div class="stat-value" style="color:var(--orange)" id="st-rate-${hid}">0%</div><div class="stat-label">Abn Rate</div></div>
+        </div>
+        <div class="alert-log" id="alerts-${hid}">
+            <div class="alert-log-title">⚠ Arrhythmia Detections (model vs ground truth)</div>
+            <div class="no-alerts">No abnormal beats detected yet</div>
+        </div>
+    </div>`;
+}
+
+// ── ECG Canvas Renderer ───────────────────────────────────────────────────────
+class ECGMonitor {
+    constructor(canvasId, color) {
+        this.canvas = document.getElementById(canvasId);
+        this.ctx = this.canvas.getContext('2d');
+        this.color = color;
+        this._resize();
+        this.buffer = new Float32Array(this.w).fill(0);
+        this.writePos = 0;
+        this.sampleCount = 0;
+    }
+    _resize() {
+        const r = this.canvas.parentElement.getBoundingClientRect();
+        this.w = Math.floor(r.width);
+        this.h = Math.floor(r.height);
+        this.canvas.width = this.w;
+        this.canvas.height = this.h;
+    }
+    addSamples(samples) {
+        for (const s of samples) {
+            this.sampleCount++;
+            if (this.sampleCount % SAMPLES_PER_PX === 0) {
+                this.buffer[this.writePos % this.w] = s;
+                this.writePos++;
+            }
+        }
+    }
+    draw() {
+        const {ctx, w, h, color, buffer} = this;
+        const pos = this.writePos % w;
+
+        ctx.fillStyle = '#000a00';
+        ctx.fillRect(0, 0, w, h);
+
+        // Grid
+        ctx.strokeStyle = 'rgba(0,70,18,.1)';
+        ctx.lineWidth = .5;
+        for (let x=0;x<w;x+=10){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,h);ctx.stroke()}
+        for (let y=0;y<h;y+=10){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke()}
+        ctx.strokeStyle = 'rgba(0,90,22,.22)';
+        for (let x=0;x<w;x+=50){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,h);ctx.stroke()}
+        for (let y=0;y<h;y+=50){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke()}
+
+        // Erase gap
+        const gap = 25;
+        ctx.fillStyle = '#000a00';
+        if (pos+gap<=w) ctx.fillRect(pos,0,gap,h);
+        else { ctx.fillRect(pos,0,w-pos,h); ctx.fillRect(0,0,(pos+gap)%w,h); }
+
+        // Glow
+        ctx.save();
+        ctx.strokeStyle = color+'30';
+        ctx.lineWidth = 5;
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 12;
+        this._trace(ctx, pos, gap);
+        ctx.restore();
+
+        // Waveform
+        ctx.save();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.8;
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 4;
+        this._trace(ctx, pos, gap);
+        ctx.restore();
+
+        // Sweep line
+        ctx.save();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.5;
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 20;
+        ctx.beginPath();ctx.moveTo(pos,0);ctx.lineTo(pos,h);ctx.stroke();
+        ctx.restore();
+    }
+    _trace(ctx, pos, gap) {
+        const {w, h, buffer} = this;
+        ctx.beginPath();
+        let on = false;
+        for (let i=0;i<w;i++) {
+            const inGap = (pos+gap<=w)?(i>=pos&&i<pos+gap):(i>=pos||i<(pos+gap)%w);
+            if (inGap){on=false;continue}
+            const y = Math.max(2, Math.min(h-2, h/2 - buffer[i]*(h*.35)));
+            if(!on){ctx.moveTo(i,y);on=true}else ctx.lineTo(i,y);
+        }
+        ctx.stroke();
+    }
+}
+
+// ── Data Fetching ─────────────────────────────────────────────────────────────
+async function fetchECG(hid) {
+    if (hospitalState[hid].fetching) return;
+    hospitalState[hid].fetching = true;
+    try {
+        const r = await fetch(`/api/ecg/${hid}`);
+        const d = await r.json();
+        monitors[hid].addSamples(d.points);
+        hospitalState[hid].samplesSincePred += d.points.length;
+        if (hospitalState[hid].samplesSincePred >= PREDICT_EVERY) {
+            hospitalState[hid].samplesSincePred = 0;
+            fetchPrediction(hid);
+        }
+    } catch(e) {}
+    hospitalState[hid].fetching = false;
+}
+
+async function fetchPrediction(hid) {
+    try {
+        const r = await fetch(`/api/predict/${hid}`);
+        const p = await r.json();
+        updateUI(hid, p);
+    } catch(e) {}
+}
+
+function updateUI(hid, p) {
+    // Window index
+    const widx = document.getElementById(`widx-${hid}`);
+    if (widx) widx.textContent = p.window_index;
+
+    // BPM
+    document.getElementById(`bpm-${hid}`).textContent = p.bpm;
+
+    // Heart pulse
+    const heart = document.getElementById(`heart-${hid}`);
+    heart.classList.remove('beat'); void heart.offsetWidth; heart.classList.add('beat');
+
+    // Prediction badge
+    const badge = document.getElementById(`badge-${hid}`);
+    const bicon = document.getElementById(`bicon-${hid}`);
+    const btxt = document.getElementById(`btxt-${hid}`);
+    if (p.is_abnormal) {
+        badge.className = 'prediction-badge abnormal';
+        bicon.textContent = '⚠️';
+        btxt.textContent = p.name;
+        document.getElementById(`card-${hid}`).classList.add('alert-flash');
+        setTimeout(() => document.getElementById(`card-${hid}`).classList.remove('alert-flash'), 1500);
+    } else {
+        badge.className = 'prediction-badge normal';
+        bicon.textContent = '✅';
+        btxt.textContent = 'Normal Sinus';
+    }
+
+    // Ground truth badge (proves prediction is real)
+    const truth = document.getElementById(`truth-${hid}`);
+    truth.textContent = `GT: ${p.true_name}`;
+    truth.className = 'truth-badge ' + (p.correct ? 'correct' : 'wrong');
+    truth.title = p.correct
+        ? `Model CORRECT — predicted ${p.name}, ground truth is ${p.true_name}`
+        : `Model WRONG — predicted ${p.name}, ground truth is ${p.true_name}`;
+
+    // Confidence
+    document.getElementById(`conf-${hid}`).textContent = p.confidence + '%';
+
+    // Probability bars
+    p.probabilities.forEach((v, i) => {
+        document.getElementById(`pf-${hid}-${i}`).style.width = v + '%';
+        document.getElementById(`pv-${hid}-${i}`).textContent = v.toFixed(1) + '%';
+    });
+
+    // Stats
+    const s = p.stats;
+    document.getElementById(`st-total-${hid}`).textContent = s.total;
+    document.getElementById(`st-normal-${hid}`).textContent = s.normal;
+    document.getElementById(`st-abn-${hid}`).textContent = s.abnormal;
+    document.getElementById(`st-rate-${hid}`).textContent = (s.total > 0 ? (s.abnormal/s.total*100).toFixed(1) : '0') + '%';
+
+    // Alert log with ground truth comparison
+    if (p.alerts && p.alerts.length > 0) {
+        document.getElementById(`alerts-${hid}`).innerHTML =
+            '<div class="alert-log-title">⚠ Arrhythmia Detections (model vs ground truth)</div>' +
+            p.alerts.slice().reverse().map(a =>
+                `<div class="alert-entry">
+                    <span class="alert-pred">Pred: ${a.type}</span>
+                    <span class="alert-truth">GT: ${a.true_type} ${a.correct ? '✅' : '❌'}</span>
+                    <span class="alert-conf">${a.confidence}%</span>
+                    <span class="alert-time">${a.timestamp} · Beat#${a.beat}</span>
+                </div>`
+            ).join('');
+    }
+}
+
+// ── Animation Loop ────────────────────────────────────────────────────────────
+function animate() {
+    Object.values(monitors).forEach(m => m.draw());
+    requestAnimationFrame(animate);
+}
+
+// ── Resize Handler ────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+    Object.entries(monitors).forEach(([hid, m]) => {
+        m._resize();
+        m.buffer = new Float32Array(m.w).fill(0);
+        m.writePos = 0;
+    });
+});
+
+// ── Start ─────────────────────────────────────────────────────────────────────
+init();
+</script>
+</body>
+</html>

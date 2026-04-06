@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Development / OS / IDEs
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Project-Specific Exclusions
+
+# 1. Medical Datasets (Too large & messy to upload)
+data/raw/
+data/processed/
+*.mat
+*.atr
+*.dat
+*.hea
+*.npy
+
+# 2. PyTorch Model Checkpoints (Bloated binaries)
+checkpoints/
+*.pt
+*.pth
+
+# 3. Logs / Temporary artifacts
+logs/
+*.log
