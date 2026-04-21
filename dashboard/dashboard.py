@@ -154,6 +154,20 @@ def create_dashboard():
                 ],
             ),
 
+            # Charts Row 3: Epsilon
+            html.Div(
+                style={
+                    "display": "grid",
+                    "gridTemplateColumns": "1fr",
+                    "gap": "20px",
+                    "marginBottom": "20px",
+                },
+                children=[
+                    _chart_card("epsilon-chart", "Privacy Budget (Epsilon)"),
+                    _chart_card("acc-eps-chart", "Accuracy vs Epsilon")
+                ],
+            ),
+
             # Auto-refresh interval
             dcc.Interval(id="refresh-interval", interval=5000, n_intervals=0),
         ],
@@ -168,6 +182,8 @@ def create_dashboard():
             Output("loss-chart", "figure"),
             Output("distribution-chart", "figure"),
             Output("divergence-chart", "figure"),
+            Output("epsilon-chart", "figure"),
+            Output("acc-eps-chart", "figure")
         ],
         [Input("refresh-interval", "n_intervals")],
     )
@@ -184,6 +200,8 @@ def create_dashboard():
                 _empty_figure("Client Loss"),
                 _empty_figure("Data Distribution"),
                 _empty_figure("Weight Divergence"),
+                _empty_figure("Privacy Budget (Epsilon)"),
+                _empty_figure("Accuracy vs Epsilon") 
             )
 
         current_round = data.get("current_round", 0)
@@ -195,6 +213,8 @@ def create_dashboard():
         best_accuracy = data.get("best_accuracy", 0.0)
         total_samples = data.get("total_samples_trained", 0)
         data_distribution = data.get("data_distribution", {})
+        client_epsilons = data.get("client_epsilons",{})
+        rounds_eps = data.get("round_epsilons",[])
 
         # ── Status Cards ───────────────────────────────────────────────
         status_cards = [
@@ -203,6 +223,21 @@ def create_dashboard():
             _status_card("Total Samples", f"{total_samples:,}", "📊", COLORS["accent2"]),
             _status_card("Active Clients", f"{len(client_losses)}", "🏥", COLORS["warning"]),
         ]
+
+        acc_eps_fig = go.Figure()
+
+        acc_eps_fig.add_trace(go.Scatter(
+            x=rounds_eps,
+            y=global_accuracy,
+            mode="lines+markers",
+            name="Accuracy vs Epsilon"
+        ))
+
+        acc_eps_fig.update_layout(
+            title="Accuracy vs Privacy (Epsilon)",
+            xaxis_title="Epsilon",
+            yaxis_title="Accuracy (%)"
+        )
 
         # ── Accuracy Chart ─────────────────────────────────────────────
         acc_fig = go.Figure()
@@ -318,7 +353,41 @@ def create_dashboard():
             ),
         )
 
-        return status_cards, acc_fig, loss_fig, dist_fig, div_fig
+        # ── Epsilon Chart ───────────────────────────────────────────
+        epsilon_fig = go.Figure()
+
+        for i, (client_id, eps_list) in enumerate(client_epsilons.items()):
+            short_name = HOSPITAL_NAMES.get(client_id, client_id.replace("_", " "))
+            rounds = list(range(1, len(eps_list) + 1))
+            color = list(HOSPITAL_COLORS.values())[i % len(HOSPITAL_COLORS)]
+
+            epsilon_fig.add_trace(go.Scatter(
+                x=rounds,
+                y=eps_list,
+                mode="lines+markers",
+                name=short_name,
+                line=dict(color=color, width=2),
+                marker=dict(size=6, color=color),
+            ))
+
+        epsilon_fig.update_layout(
+            **_chart_layout("Privacy Budget (Epsilon)"),
+            yaxis=dict(
+                title="Epsilon (Lower = Better Privacy)",
+                gridcolor=COLORS["grid"],
+                color=COLORS["text_muted"],
+            ),
+            xaxis=dict(
+                title="Federation Round",
+                gridcolor=COLORS["grid"],
+                color=COLORS["text_muted"],
+                dtick=1,
+            ),
+        )
+
+        return status_cards, acc_fig, loss_fig, dist_fig, div_fig, epsilon_fig, acc_eps_fig
+    
+
 
     return app
 

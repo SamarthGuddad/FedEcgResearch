@@ -1,0 +1,20 @@
+Privacy Resistance Summary
+GroupNorm + AdaptiveAvgPool1d + DP-SGD vs DLG Attack
+FedECG — MIT-BIH Arrhythmia Dataset
+======================================================================
+   Noise        ε     Cosine        MSE     PSNR    SNR(dB)
+----------------------------------------------------------------------
+     0.0        ∞    -0.0158    10.1969     9.15          ∞
+     0.5    14.53     0.0037    17.1345     7.72     -67.57
+     1.0     7.27    -0.0012     9.9816     7.99     -83.62
+     1.5     4.84     0.0086    11.7469     6.32     -80.55
+     2.0     3.63    -0.0091    29.2501     4.46     -74.81
+     3.0     2.42    -0.0011     5.7566     7.63     -85.10
+     5.0     1.45    -0.0052    13.6086     8.15     -88.91
+
+Interpretation:
+- Cosine ~ 0.0 across all ε indicates architectural resistance
+- AdaptiveAvgPool1d(1) collapses spatial dims, attenuating gradient flow
+- GroupNorm normalizes per-sample (no batch mixing artifact)
+- DP-SGD provides compounded noise on top of architectural privacy
+- Together these form a multi-layer privacy defense

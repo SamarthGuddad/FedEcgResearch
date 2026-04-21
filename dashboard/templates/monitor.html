@@ -138,7 +138,7 @@ async function init() {
         const h = data[hid];
         grid.insertAdjacentHTML('beforeend', buildCard(hid, h));
         monitors[hid] = new ECGMonitor(`canvas-${hid}`, h.color);
-        hospitalState[hid] = { samplesSincePred: 0, fetching: false };
+        hospitalState[hid] = { samplesSincePred: 0, fetching: false ,saliency: null};
         setInterval(() => fetchECG(hid), FETCH_MS);
     });
 
@@ -210,6 +210,7 @@ class ECGMonitor {
         this.buffer = new Float32Array(this.w).fill(0);
         this.writePos = 0;
         this.sampleCount = 0;
+        this.saliency = null
     }
     _resize() {
         const r = this.canvas.parentElement.getBoundingClientRect();
@@ -226,6 +227,9 @@ class ECGMonitor {
                 this.writePos++;
             }
         }
+    }
+    setSaliency(saliency){
+        this.saliency = saliency
     }
     draw() {
         const {ctx, w, h, color, buffer} = this;
@@ -250,20 +254,8 @@ class ECGMonitor {
         else { ctx.fillRect(pos,0,w-pos,h); ctx.fillRect(0,0,(pos+gap)%w,h); }
 
         // Glow
+        // Waveform + saliency overlay
         ctx.save();
-        ctx.strokeStyle = color+'30';
-        ctx.lineWidth = 5;
-        ctx.shadowColor = color;
-        ctx.shadowBlur = 12;
-        this._trace(ctx, pos, gap);
-        ctx.restore();
-
-        // Waveform
-        ctx.save();
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 1.8;
-        ctx.shadowColor = color;
-        ctx.shadowBlur = 4;
         this._trace(ctx, pos, gap);
         ctx.restore();
 
@@ -276,18 +268,51 @@ class ECGMonitor {
         ctx.beginPath();ctx.moveTo(pos,0);ctx.lineTo(pos,h);ctx.stroke();
         ctx.restore();
     }
-    _trace(ctx, pos, gap) {
-        const {w, h, buffer} = this;
+    _inGap(i, pos, gap) {
+    return (pos + gap <= this.w)
+        ? (i >= pos && i < pos + gap)
+        : (i >= pos || i < (pos + gap) % this.w);
+}
+
+_trace(ctx, pos, gap) {
+    const { w, h, buffer, color, saliency } = this;
+
+    // Pass 1 — draw full base waveform in one clean continuous path
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.8;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 4;
+    ctx.beginPath();
+    let started = false;
+    for (let i = 0; i < w; i++) {
+        if (this._inGap(i, pos, gap)) { started = false; continue; }
+        const y = Math.max(2, Math.min(h - 2, h / 2 - buffer[i] * (h * 0.35)));
+        if (!started) { ctx.moveTo(i, y); started = true; }
+        else ctx.lineTo(i, y);
+    }
+    ctx.stroke();
+
+    // Pass 2 — saliency overlay on top, only where s > threshold
+    if (!saliency || !saliency.length) return;
+    for (let i = 0; i < w - 1; i++) {
+        if (this._inGap(i, pos, gap)) continue;
+        const idx = Math.floor(i * (saliency.length / w));
+        const s = saliency[idx] || 0;
+        if (s < 0.08) continue;  // skip low-saliency pixels
+
+        const y0 = Math.max(2, Math.min(h - 2, h / 2 - buffer[i]     * (h * 0.35)));
+        const y1 = Math.max(2, Math.min(h - 2, h / 2 - buffer[i + 1] * (h * 0.35)));
+
+        ctx.strokeStyle = `rgba(255, 80, 80, ${0.4 + s * 0.6})`;
+        ctx.lineWidth = 2 + s * 3;
+        ctx.shadowColor = 'rgba(255, 80, 80, 0.8)';
+        ctx.shadowBlur = 6;
         ctx.beginPath();
-        let on = false;
-        for (let i=0;i<w;i++) {
-            const inGap = (pos+gap<=w)?(i>=pos&&i<pos+gap):(i>=pos||i<(pos+gap)%w);
-            if (inGap){on=false;continue}
-            const y = Math.max(2, Math.min(h-2, h/2 - buffer[i]*(h*.35)));
-            if(!on){ctx.moveTo(i,y);on=true}else ctx.lineTo(i,y);
-        }
+        ctx.moveTo(i, y0);
+        ctx.lineTo(i + 1, y1);
         ctx.stroke();
     }
+}
 }
 
 // ── Data Fetching ─────────────────────────────────────────────────────────────
@@ -311,11 +336,16 @@ async function fetchPrediction(hid) {
     try {
         const r = await fetch(`/api/predict/${hid}`);
         const p = await r.json();
+        console.log('saliency sample:', p.saliency?.slice(0, 5));
         updateUI(hid, p);
     } catch(e) {}
 }
 
 function updateUI(hid, p) {
+    hospitalState[hid].saliency = p.saliency
+    if(monitors[hid]){
+        monitors[hid].setSaliency(p.saliency)
+    }
     // Window index
     const widx = document.getElementById(`widx-${hid}`);
     if (widx) widx.textContent = p.window_index;

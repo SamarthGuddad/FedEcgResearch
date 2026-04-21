@@ -14,6 +14,9 @@ import numpy as np
 import torch
 from flask import Flask, render_template, jsonify
 from flask_cors import CORS
+from server.xai import compute_saliency
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from server.global_model import get_model, CLASS_NAMES
@@ -41,6 +44,9 @@ CORS(app)
 
 model = None
 hospital_registry = {}   # id -> { meta + runtime data }
+_model_lock = threading.Lock()
+_executor = ThreadPoolExecutor(max_workers=2)
+_saliency_cache = {}
 
 
 def detect_hospitals():
@@ -87,6 +93,7 @@ def load_resources():
         os.path.join(CHECKPOINT_DIR, "global_model_pretrained.pt"),
     ]:
         if os.path.exists(path):
+            print("[DEBUG] Loading model from:", path)
             model.load_state_dict(torch.load(path, map_location=DEVICE, weights_only=True))
             print(f"[MONITOR] Model loaded from {os.path.basename(path)}")
             break
@@ -112,6 +119,12 @@ def load_resources():
 
     print(f"[MONITOR] Auto-detected {len(hospital_registry)} hospitals")
 
+
+def _compute_and_cache(hid, model, x):
+    with _model_lock:
+        s = compute_saliency(model, x)
+    s = (s - s.min()) / (s.max() - s.min() + 1e-8)
+    _saliency_cache[hid] = s.tolist()
 
 def estimate_bpm(window):
     """Estimate heart rate from simple R-peak detection in the window."""
@@ -176,8 +189,6 @@ def ecg_data(hospital_id):
 
 @app.route("/api/predict/<hospital_id>")
 def predict(hospital_id):
-    """Run REAL model inference on the next ECG window. Returns both
-    the model's prediction AND the ground truth label to prove it's not fake."""
     if hospital_id not in hospital_registry:
         return jsonify({"error": "Unknown hospital"}), 404
 
@@ -187,11 +198,21 @@ def predict(hospital_id):
     true_label = int(h["labels"][idx])
     h["window_idx"] = idx + 1
 
-    with torch.no_grad():
-        x = torch.from_numpy(window).float().unsqueeze(0).unsqueeze(0)
-        out = model(x)
-        probs = torch.softmax(out, dim=1)[0].numpy()
-        pred = int(np.argmax(probs))
+    x = torch.from_numpy(window).float().unsqueeze(0).unsqueeze(0)
+
+    # Lock model during forward pass
+    with _model_lock:
+        with torch.no_grad():
+            out = model(x)
+            probs = torch.softmax(out, dim=1)[0].numpy()
+            pred = int(np.argmax(probs))
+
+    # Submit saliency computation every 5th beat (non-blocking)
+    if h["stats"]["total"] % 5 == 0:
+        _executor.submit(_compute_and_cache, hospital_id, model, x.clone())
+
+    # Use cached saliency or zeros if not ready yet
+    saliency = _saliency_cache.get(hospital_id, [0] * len(window))
 
     bpm = estimate_bpm(window)
     is_abnormal = pred != 0
@@ -229,6 +250,8 @@ def predict(hospital_id):
         "alerts": h["alerts"][-5:],
         "window_index": idx,
         "source": "MIT-BIH Arrhythmia Database (real ECG)",
+        "saliency": saliency,   # already a list, no .tolist() needed
+        "signal": window.tolist(),
     })
 
 

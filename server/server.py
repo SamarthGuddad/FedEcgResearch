@@ -47,6 +47,7 @@ metrics = {
     "best_accuracy": 0.0,
     "total_samples_trained": 0,
     "data_distribution": {},  # hospital → {class_idx: count}
+    "client_epsilons": {}
 }
 
 
@@ -145,6 +146,12 @@ def submit_weights_endpoint():
     num_samples = data["num_samples"]
     local_loss = data.get("local_loss", 0.0)
     local_accuracy = data.get("local_accuracy", 0.0)
+    epsilon = data.get("epsilon",None)
+
+    if epsilon is not None:
+        if client_id not in metrics["client_epsilons"]:
+            metrics["client_epsilons"][client_id] = []
+        metrics["client_epsilons"][client_id].append(epsilon)
 
     # Submit to aggregator
     aggregator.submit(client_id, weights, num_samples)
@@ -202,12 +209,41 @@ def aggregate_endpoint():
     metrics["global_accuracy"].append(accuracy)
     metrics["global_loss"].append(loss)
 
+    # 🔥 Compute average epsilon for this round
+    round_epsilons = []
+
+    for client_id, eps_list in metrics["client_epsilons"].items():
+        if len(eps_list) >= metrics["current_round"]:
+            round_epsilons.append(eps_list[metrics["current_round"] - 1])
+
+    avg_epsilon = sum(round_epsilons) / len(round_epsilons) if round_epsilons else 0.0
+
+    # Store per-round epsilon
+    if "round_epsilons" not in metrics:
+        metrics["round_epsilons"] = []
+
+    if "round_epsilons" not in metrics:
+        metrics["round_epsilons"] = []
+
+    prev_eps = metrics["round_epsilons"][-1] if metrics["round_epsilons"] else 0.0
+
+    cumulative_eps = prev_eps + avg_epsilon
+
+    metrics["round_epsilons"].append(cumulative_eps)
+
+    print(f"[SERVER] Avg Epsilon (Round {metrics['current_round']}): {avg_epsilon:.4f}")
+
     # Save best model
+    # 🔥 ALWAYS save latest model
+    os.makedirs(CHECKPOINT_DIR, exist_ok=True)
+
+    torch.save(global_model.state_dict(), BEST_MODEL_PATH)
+    print(f"[SERVER] Saved latest global model (Round {metrics['current_round']})")
+
+    # Track best separately
     if accuracy > metrics["best_accuracy"]:
         metrics["best_accuracy"] = accuracy
-        os.makedirs(CHECKPOINT_DIR, exist_ok=True)
-        torch.save(global_model.state_dict(), BEST_MODEL_PATH)
-        print(f"[SERVER] ★ New best model saved! Accuracy: {accuracy:.2f}%")
+        print(f"[SERVER] ★ New best accuracy: {accuracy:.2f}%")
 
     print(f"[SERVER] Round {metrics['current_round']} complete | "
           f"Global Acc: {accuracy:.2f}% | Loss: {loss:.4f}")
@@ -237,6 +273,8 @@ def global_metrics_endpoint():
         "best_accuracy": metrics["best_accuracy"],
         "total_samples_trained": metrics["total_samples_trained"],
         "data_distribution": metrics["data_distribution"],
+        "client_epsilons": metrics["client_epsilons"],
+        "round_epsilons": metrics.get("round_epsilons",[])
     })
 
 

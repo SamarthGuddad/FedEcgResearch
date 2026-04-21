@@ -1,0 +1,22 @@
+{
+  "block1": {
+    "mean_grad_norm": 0.02540822202045092,
+    "pct_info_retained": 100.0
+  },
+  "block2": {
+    "mean_grad_norm": 0.0166751162849323,
+    "pct_info_retained": 65.62881996036796
+  },
+  "block3": {
+    "mean_grad_norm": 0.018091654841555282,
+    "pct_info_retained": 71.20393873681292
+  },
+  "block4": {
+    "mean_grad_norm": 0.007094217776193545,
+    "pct_info_retained": 27.920953187843896
+  },
+  "classifier": {
+    "mean_grad_norm": 0.02231563711829949,
+    "pct_info_retained": 87.82840885260596
+  }
+}

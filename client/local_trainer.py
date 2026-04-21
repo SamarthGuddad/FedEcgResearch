@@ -9,7 +9,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from typing import Tuple
-
+from opacus import PrivacyEngine
 
 DEVICE = "cpu"  # Clients run on CPU for simulation
 
@@ -46,6 +46,16 @@ class LocalTrainer:
         self.model.train()
         optimizer = optim.Adam(self.model.parameters(), lr=self.learning_rate)
 
+        privacy_engine = PrivacyEngine();
+
+        self.model, optimizer,train_loader = privacy_engine.make_private(
+            module=self.model,
+            optimizer=optimizer,
+            data_loader=train_loader,
+            noise_multiplier=1.0,
+            max_grad_norm=1.0
+        )
+
         final_loss = 0.0
         final_acc = 0.0
 
@@ -76,9 +86,12 @@ class LocalTrainer:
             epoch_loss = running_loss / total if total > 0 else 0.0
             epoch_acc = 100.0 * correct / total if total > 0 else 0.0
             final_loss = epoch_loss
-            final_acc = epoch_acc
+            final_acc = epoch_acc  
 
-        return final_loss, final_acc, total
+        epsilon = privacy_engine.get_epsilon(delta=1e-5)
+        print(f"[DP] Epsilon: {epsilon:.2f}")    
+
+        return final_loss, final_acc, total, epsilon
 
     def evaluate(self, test_loader) -> Tuple[float, float]:
         """

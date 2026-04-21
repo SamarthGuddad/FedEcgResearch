@@ -75,7 +75,10 @@ class FederatedClient:
             if response.status_code == 200:
                 data = response.json()
                 weights = deserialize_state_dict(data["weights"])
-                self.model.load_state_dict(weights)
+                # Load into base model BEFORE DP wrapping
+                fresh_model = get_model()
+                fresh_model.load_state_dict(weights)
+                self.model = fresh_model
                 return True
             else:
                 print(f"[{self.client_id}] Failed to pull model: HTTP {response.status_code}")
@@ -85,21 +88,27 @@ class FederatedClient:
             return False
 
     def train_locally(self):
+
+        from server.global_model import get_model
         """
         Train the model on local private data.
 
         Returns:
             Tuple of (loss, accuracy) from training.
         """
-        trainer = LocalTrainer(self.model, learning_rate=self.learning_rate)
+
+        fresh_model = get_model();
+        fresh_model.load_state_dict(self.model.state_dict())
+
+        trainer = LocalTrainer(fresh_model, learning_rate=self.learning_rate)
         train_loader = self.data_loader.get_train_loader()
 
-        loss, accuracy, actual_samples = trainer.train(train_loader, num_epochs=self.local_epochs)
+        loss, accuracy, actual_samples, epsilon = trainer.train(train_loader, num_epochs=self.local_epochs)
         self.model = trainer.model  # Update local model with trained weights
 
-        return loss, accuracy, actual_samples
+        return loss, accuracy, actual_samples, epsilon
 
-    def push_weights(self, local_loss: float, local_accuracy: float, actual_samples: int) -> bool:
+    def push_weights(self, local_loss: float, local_accuracy: float, actual_samples: int,epsilon) -> bool:
         """
         Push local model weights to the server.
         Only weights are transmitted — never raw ECG data.
@@ -113,7 +122,11 @@ class FederatedClient:
             True if successful, False otherwise.
         """
         try:
-            state_dict = self.model.state_dict()
+            # 🔥 FIX: unwrap DP model before sending
+            if hasattr(self.model, "_module"):
+                state_dict = self.model._module.state_dict()
+            else:
+                state_dict = self.model.state_dict()
             serialized = serialize_state_dict(state_dict)
 
             payload = {
@@ -122,6 +135,7 @@ class FederatedClient:
                 "num_samples": actual_samples,
                 "local_loss": local_loss,
                 "local_accuracy": local_accuracy,
+                "epsilon": epsilon
             }
 
             response = requests.post(
@@ -158,12 +172,12 @@ class FederatedClient:
         print(f"[{self.client_id}] Global model pulled successfully.")
 
         # Step 2: Train locally
-        loss, accuracy, actual_samples = self.train_locally()
+        loss, accuracy, actual_samples, epsilon = self.train_locally()
         print(f"[{self.client_id}] Local training complete | "
               f"Loss: {loss:.4f} | Acc: {accuracy:.1f}%")
 
         # Step 3: Push updated weights
-        if not self.push_weights(loss, accuracy, actual_samples):
+        if not self.push_weights(loss, accuracy, actual_samples,epsilon):
             return {"status": "error", "message": "Failed to push weights"}
         print(f"[{self.client_id}] Weights pushed to server.")
 

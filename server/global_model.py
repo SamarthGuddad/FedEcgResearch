@@ -42,32 +42,32 @@ class ECGArrhythmiaNet(nn.Module):
         # Layer 1: Conv1d(1, 32, 7) → BN → ReLU → MaxPool(2)
         self.block1 = nn.Sequential(
             nn.Conv1d(1, 32, kernel_size=7, padding=3),
-            nn.BatchNorm1d(32),
-            nn.ReLU(inplace=True),
+            nn.GroupNorm(8,32),
+            nn.ReLU(),
             nn.MaxPool1d(kernel_size=2),
         )
 
         # Layer 2: Conv1d(32, 64, 5) → BN → ReLU → MaxPool(2)
         self.block2 = nn.Sequential(
             nn.Conv1d(32, 64, kernel_size=5, padding=2),
-            nn.BatchNorm1d(64),
-            nn.ReLU(inplace=True),
+            nn.GroupNorm(8,64),
+            nn.ReLU(),
             nn.MaxPool1d(kernel_size=2),
         )
 
         # Layer 3: Conv1d(64, 128, 3) → BN → ReLU → MaxPool(2)
         self.block3 = nn.Sequential(
             nn.Conv1d(64, 128, kernel_size=3, padding=1),
-            nn.BatchNorm1d(128),
-            nn.ReLU(inplace=True),
+            nn.GroupNorm(8,128),
+            nn.ReLU(),
             nn.MaxPool1d(kernel_size=2),
         )
 
         # Layer 4: Conv1d(128, 256, 3) → BN → ReLU → AdaptiveAvgPool(1)
         self.block4 = nn.Sequential(
             nn.Conv1d(128, 256, kernel_size=3, padding=1),
-            nn.BatchNorm1d(256),
-            nn.ReLU(inplace=True),
+            nn.GroupNorm(8,256),
+            nn.ReLU(),
             nn.AdaptiveAvgPool1d(1),
         )
 
@@ -75,7 +75,7 @@ class ECGArrhythmiaNet(nn.Module):
         self.classifier = nn.Sequential(
             nn.Linear(256, 128),
             nn.Dropout(0.4),
-            nn.ReLU(inplace=True),
+            nn.ReLU(),
             nn.Linear(128, num_classes),
         )
 
