@@ -55,6 +55,8 @@ sequenceDiagram
 
 ### 🧠 Model Architecture: 1D CNN
 Because ECG data represents sequential, time-series electrical signals, standard 2D image networks (like ResNet or VGG) are inefficient. Instead, we use a custom **1D Convolutional Neural Network**:
+
+> For the full end-to-end workflow with diagrams, see [`docs/workflow.md`](docs/workflow.md).
 - **Input:** 5-second ECG windows sampled at 360Hz (Tensor shape: `[Batch, 1, 1800]`)
 - **Conv Blocks:** 4 sequential blocks of `Conv1d` $\to$ `BatchNorm1d` $\to$ `ReLU` $\to$ `MaxPool1d`. This progressively extracts morphological features from the heartbeat (like QRS complexes and P-waves).
 - **Classifier:** Fully Connected Linear layer outputting soft probabilities across 5 distinct clinical classes:
